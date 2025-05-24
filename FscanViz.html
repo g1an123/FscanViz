@@ -1,0 +1,1998 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fscan 扫描结果可视化</title>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* General Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        /* Drop Area Styles */
+        .drop-area {
+            border: 2px dashed #95a5a6;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 10;
+        }
+
+        .drop-area.highlight {
+            border-color: #3498db;
+            background-color: #e8f4fc;
+        }
+
+        .drop-area input {
+            display: none;
+        }
+
+        .drop-area p {
+            margin-bottom: 10px;
+            color: #7f8c8d;
+        }
+
+        .drop-area i {
+            font-size: 36px;
+            color: #95a5a6;
+            margin-bottom: 10px;
+        }
+
+        /* Tab Container Styles */
+        .tab-container {
+            display: flex;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            background-color: #ecf0f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+            margin-right: 5px;
+        }
+
+        .tab.active {
+            background-color: #fff;
+            border-bottom: 1px solid #fff;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        /* Result Container Styles */
+        .result-container {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        /* Host List Styles */
+        .host-list {
+            list-style: none;
+        }
+
+        .host-item {
+            border-bottom: 1px solid #eee;
+            padding: 15px;
+            transition: background-color 0.2s ease;
+            position: relative;
+        }
+
+        .host-item:last-child {
+            border-bottom: none;
+        }
+
+        .host-item:hover {
+            background-color: #f9f9f9;
+        }
+
+        .host-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .host-info {
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+            /* Allow host info to take available space */
+        }
+
+        .host-toggle {
+            margin-right: 10px;
+            transition: transform 0.3s ease;
+        }
+
+        .host-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .port-list {
+            list-style: none;
+            margin-left: 20px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease;
+        }
+
+        .host-item.expanded .port-list {
+            max-height: 2000px;
+            /* Sufficiently large to show all ports */
+        }
+
+        .host-item.expanded .host-toggle {
+            transform: rotate(90deg);
+        }
+
+        .port-item {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+        }
+
+        .port-item.info {
+            background-color: #e8f4fc;
+            border-left: 3px solid #3498db;
+        }
+
+        .port-item.vulnerability {
+            background-color: #fce8e6;
+            border-left: 3px solid #e74c3c;
+        }
+
+        .port-number {
+            font-weight: bold;
+            margin-right: 5px;
+            min-width: 80px;
+            /* Give some space for "Port: XXXX" */
+        }
+
+        .web-title,
+        .service-info,
+        .vulnerability-info {
+            font-size: 14px;
+            flex-basis: 100%;
+            /* Take full width on next line */
+            margin-top: 5px;
+            color: #555;
+        }
+
+        .web-title {
+            font-style: italic;
+        }
+
+        .vulnerability-info {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+
+        /* Filter Container Styles */
+        .filter-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .filter-label {
+            margin-right: 10px;
+        }
+
+        .filter-input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+
+        /* Button Styles */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+
+        .btn-secondary {
+            background-color: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        .btn-secondary:hover {
+            background-color: #dfe6e9;
+        }
+
+        /* Empty State Styles */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #7f8c8d;
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #bdc3c7;
+        }
+
+        /* Network Graph Styles */
+        .network-graph-container {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+            /* Center the graph title */
+        }
+
+        .graph-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        #network-graph {
+            width: 100%;
+            height: 500px;
+            /* Fixed height for the graph */
+            border: 1px solid #eee;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            display: block;
+            /* Ensure it behaves like a block element */
+            margin: 0 auto;
+            /* Center the SVG within its container */
+        }
+
+        /* D3.js specific styles */
+        .link {
+            fill: none;
+            stroke: #999;
+            stroke-width: 1.5px;
+            opacity: 0.6;
+        }
+
+        /* Specific link colors for hierarchy */
+        .link.b-c {
+            stroke: #27ae60;
+            /* Green for B to C segment */
+            stroke-width: 2px;
+        }
+
+        .link.c-host {
+            stroke: #8e44ad;
+            /* Purple for C to host */
+            stroke-width: 1.8px;
+        }
+
+        .link.host-port {
+            stroke: #3498db;
+            /* Blue for host to port */
+            stroke-width: 1.5px;
+        }
+
+        .link.port-detail {
+            stroke: #f39c12;
+            /* Orange for port to detail */
+            stroke-width: 1px;
+        }
+
+        .node {
+            cursor: grab;
+        }
+
+        .node.active {
+            cursor: grabbing;
+        }
+
+        .node circle {
+            stroke-width: 2px;
+            fill: white;
+        }
+
+        /* Host Nodes */
+        .node.host circle {
+            stroke: #3498db;
+            fill: #e8f4fc;
+        }
+
+        .node.host.vulnerable circle {
+            stroke: #e74c3c;
+            fill: #fce8e6;
+        }
+
+        /* Port Nodes */
+        .node.port circle {
+            stroke: #f39c12;
+            fill: #fdf5e6;
+        }
+
+        .node.port.vulnerable circle {
+            stroke: #e74c3c;
+            fill: #fce8e6;
+        }
+
+        /* Service/Web/Vulnerability Nodes (smaller circles) */
+        .node.web circle,
+        .node.service circle {
+            stroke: #95a5a6;
+            fill: #fff;
+        }
+
+        .node.vulnerability circle {
+            stroke: #e74c3c;
+            fill: #fce8e6;
+        }
+
+        /* New: B-Segment and C-Segment Nodes */
+        .node.b-segment circle {
+            stroke: #27ae60;
+            /* Green border */
+            fill: #d4f4e2;
+            /* Lighter green fill */
+        }
+
+        .node.c-segment circle {
+            stroke: #8e44ad;
+            /* Purple border */
+            fill: #f0e6f7;
+            /* Lighter purple fill */
+        }
+
+        .node text {
+            font-family: sans-serif;
+            fill: #333;
+            pointer-events: none;
+            /* Text should not interfere with click/drag on circle */
+            text-anchor: middle;
+            /* Center text */
+            font-size: 10px;
+        }
+
+        /* Tooltip for D3 graph */
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 8px 12px;
+            font: 12px sans-serif;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            pointer-events: none;
+            /* Tooltip itself should not block events */
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            color: #333;
+            line-height: 1.4;
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+
+        .tooltip strong {
+            color: #2c3e50;
+        }
+
+        /* Styles for B/C Segments */
+        .segment-item {
+            /* No direct style, structure only */
+        }
+
+        .segment-header {
+            padding: 10px 15px;
+            border-bottom: 1px solid #e0e4e8;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+
+        .segment-header:hover {
+            background-color: #e9edf1;
+        }
+
+        .b-segment-item>.segment-header {
+            background-color: #ddeeff;
+            /* Light blue for B-segments */
+        }
+
+        .c-segment-item>.segment-header {
+            background-color: #eef5ff;
+            /* Lighter blue for C-segments */
+        }
+
+        .segment-toggle {
+            margin-right: 10px;
+            transition: transform 0.3s ease;
+            width: 20px;
+            /* Ensure space for icon */
+        }
+
+        .segment-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-out;
+            /* Smoother transition */
+        }
+
+        .b-segment-item>.segment-content {
+            padding-left: 20px;
+            /* Indent C-segments */
+        }
+
+        .c-segment-item>.segment-content {
+            padding-left: 20px;
+            /* Indent hosts under C-segments */
+        }
+
+        .segment-item.expanded>.segment-content {
+            max-height: 50000px;
+            /* Large enough for many nested items */
+        }
+
+        .segment-item.expanded>.segment-header .segment-toggle {
+            transform: rotate(90deg);
+        }
+
+        /* Styles for Port Remarks */
+        .port-actions {
+            margin-left: auto;
+            /* Pushes actions to the right */
+            display: flex;
+            align-items: center;
+        }
+
+        .port-remark-toggle {
+            cursor: pointer;
+            margin-left: 10px;
+            color: #3498db;
+            font-size: 1.1em;
+        }
+
+        .port-remark-toggle:hover {
+            color: #2980b9;
+        }
+
+        .port-remark-editor {
+            margin-top: 10px;
+            padding: 12px;
+            background-color: #fdfdfd;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-left: 20px;
+            /* Indent from port number */
+            flex-basis: 100%;
+            /* Take full width */
+        }
+
+        .port-remark-editor textarea {
+            width: 100%;
+            min-height: 60px;
+            margin-bottom: 10px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .port-remark-editor input[type="file"] {
+            margin-bottom: 10px;
+            display: block;
+            font-size: 13px;
+        }
+
+        .port-remark-editor .btn-save-remark {
+            margin-right: 5px;
+        }
+
+        .port-remark-display {
+            margin-top: 8px;
+            margin-left: 20px;
+            /* Indent from port number */
+            font-size: 0.9em;
+            color: #555;
+            background-color: #f0f8ff;
+            /* Light alice blue */
+            padding: 8px 10px;
+            border-radius: 3px;
+            border-left: 3px solid #5dade2;
+            flex-basis: 100%;
+            /* Take full width */
+        }
+
+        .port-remark-display p {
+            margin: 4px 0;
+            word-break: break-all;
+        }
+
+        .port-remark-display strong {
+            color: #333;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .drop-area {
+                padding: 30px 15px;
+            }
+
+            .host-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .filter-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            #network-graph {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>fscan 扫描结果可视化工具</h1>
+            <p>拖拽 fscan 扫描结果文件到下方区域，或点击选择文件</p>
+        </header>
+
+        <div class="drop-area" id="dropArea">
+            <i class="fa fa-cloud-upload"></i>
+            <p>拖放 fscan 扫描结果文件到这里</p>
+            <input type="file" id="fileInput" accept=".txt, .log" multiple>
+            <button class="btn btn-primary" id="browseBtn">浏览文件</button>
+        </div>
+
+        <div class="filter-container">
+            <div>
+                <label class="filter-label" for="searchInput">搜索:</label>
+                <input type="text" id="searchInput" class="filter-input" placeholder="输入IP、端口或关键词...">
+            </div>
+            <div>
+                <label class="filter-label" for="severityFilter">漏洞等级:</label>
+                <select id="severityFilter" class="filter-input">
+                    <option value="all">全部</option>
+                    <option value="vulnerability">漏洞</option>
+                    <option value="info">信息</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="clearFilterBtn">清除筛选</button>
+            <button class="btn btn-secondary" id="expandAllBtn">全部展开</button>
+            <button class="btn btn-secondary" id="collapseAllBtn">全部折叠</button>
+        </div>
+
+        <div class="tab-container" id="tabContainer">
+            <div class="tab active" data-tab="all">全部结果</div>
+            <div class="tab" data-tab="vulnerability">漏洞</div>
+            <div class="tab" data-tab="info">信息</div>
+        </div>
+
+        <div class="result-container" id="resultContainer">
+            <div class="empty-state" id="emptyState">
+                <i class="fa fa-file-text-o"></i>
+                <p>请导入 fscan 扫描结果文件</p>
+            </div>
+            <div id="segmentedHostList"></div>
+        </div>
+
+        <div class="network-graph-container">
+            <div class="graph-title">网络拓扑图</div>
+            <div id="network-graph"></div>
+        </div>
+    </div>
+
+    <script>
+        let scanData = {
+            hosts: [],
+            vulnerabilities: 0
+        };
+
+        // Store port remark data, persist in localStorage
+        let portNotes = {};
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const dropArea = document.getElementById('dropArea');
+            const fileInput = document.getElementById('fileInput');
+            const browseBtn = document.getElementById('browseBtn');
+            const segmentedHostList = document.getElementById('segmentedHostList');
+            const emptyState = document.getElementById('emptyState');
+            const searchInput = document.getElementById('searchInput');
+            const severityFilter = document.getElementById('severityFilter');
+            const clearFilterBtn = document.getElementById('clearFilterBtn');
+            const tabContainer = document.getElementById('tabContainer');
+            const expandAllBtn = document.getElementById('expandAllBtn');
+            const collapseAllBtn = document.getElementById('collapseAllBtn');
+
+            // --- Upload Handlers ---
+            function setupUploadHandlers() {
+                browseBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInput.click();
+                });
+
+                fileInput.addEventListener('change', function () {
+                    if (this.files.length > 0) {
+                        processFiles(this.files);
+                    }
+                });
+
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                    dropArea.addEventListener(eventName, preventDefaults, false);
+                });
+
+                function preventDefaults(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropArea.addEventListener(eventName, highlight, false);
+                });
+
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropArea.addEventListener(eventName, unhighlight, false);
+                });
+
+                function highlight() {
+                    dropArea.classList.add('highlight');
+                }
+
+                function unhighlight() {
+                    dropArea.classList.remove('highlight');
+                }
+
+                dropArea.addEventListener('click', function (e) {
+                    if (e.target === dropArea || e.target.tagName === 'P' || e.target.tagName === 'I') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fileInput.click();
+                    }
+                });
+
+                dropArea.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        processFiles(files);
+                    }
+                    dropArea.classList.remove('highlight');
+                });
+            }
+
+            setupUploadHandlers();
+
+            // --- Tab Switching ---
+            tabContainer.addEventListener('click', function (e) {
+                if (e.target.classList.contains('tab')) {
+                    document.querySelectorAll('.tab').forEach(tab => {
+                        tab.classList.remove('active');
+                    });
+                    e.target.classList.add('active');
+                    filterResults(); // Re-filter when tab changes
+                }
+            });
+
+            // --- File Processing ---
+            function processFiles(files) {
+                segmentedHostList.innerHTML = '';
+                emptyState.style.display = 'none';
+                scanData = { hosts: [], vulnerabilities: 0 };
+                loadSavedNotes(); // Load notes first, then parse new files to potentially override/add
+
+                const filePromises = Array.from(files).map(file => {
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            const content = e.target.result;
+                            parseFscanResults(content);
+                            resolve();
+                        };
+                        reader.readAsText(file);
+                    });
+                });
+
+                Promise.all(filePromises).then(() => {
+                    sortHostsByIP();
+                    renderSegmentedHosts(); // Initial render
+                    buildNetworkGraph(); // Build graph after data is ready
+                    addFilterEvents(); // Setup filter event listeners once
+                    console.log('扫描数据处理完成:', scanData);
+                });
+            }
+
+            // --- Data Parsing ---
+            function parseFscanResults(content) {
+                const lines = content.split('\n');
+                let currentHostContext = null;
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    const openPortMatch = line.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)\s+open$/);
+                    if (openPortMatch) {
+                        const hostIp = openPortMatch[1];
+                        const portNumber = openPortMatch[2];
+                        currentHostContext = findOrCreateHost(hostIp);
+                        findOrCreatePort(currentHostContext, portNumber, 'open');
+                        continue;
+                    }
+
+                    const webTitleMatch = line.match(/^\[\*\] WebTitle\s+(https?:\/\/[^ ]+)\s+code:(\d+)\s+len:(\d+)\s+title:(.*?)(?:\s+跳转url:(\S+))?$/);
+                    if (webTitleMatch) {
+                        const url = webTitleMatch[1];
+                        const code = webTitleMatch[2];
+                        const len = webTitleMatch[3];
+                        const title = webTitleMatch[4].trim();
+                        const jumpUrl = webTitleMatch[5] || '';
+
+                        const hostIp = getIpFromUrl(url);
+                        const portNumber = extractPortFromUrl(url);
+
+                        if (hostIp) {
+                            const host = findOrCreateHost(hostIp);
+                            const port = findOrCreatePort(host, portNumber, 'open');
+                            const newWebTitle = { url, code, len, title, jumpUrl };
+                            if (!port.webTitles.some(wt => wt.url === newWebTitle.url && wt.title === newWebTitle.title)) {
+                                port.webTitles.push(newWebTitle);
+                            }
+                            currentHostContext = host;
+                        }
+                        continue;
+                    }
+
+                    const infoScanMatch = line.match(/^\[\+\] InfoScan\s+(https?:\/\/[^ ]+)\s+\[([^\]]+)\]$/);
+                    if (infoScanMatch) {
+                        const url = infoScanMatch[1];
+                        const info = infoScanMatch[2];
+                        const hostIp = getIpFromUrl(url);
+                        const portNumber = extractPortFromUrl(url);
+
+                        if (hostIp) {
+                            const host = findOrCreateHost(hostIp);
+                            const port = findOrCreatePort(host, portNumber, 'open');
+                            const newServiceInfo = { url, info };
+                            if (!port.serviceInfo.some(si => si.url === newServiceInfo.url && si.info === newServiceInfo.info)) {
+                                port.serviceInfo.push(newServiceInfo);
+                            }
+                            currentHostContext = host;
+                        }
+                        continue;
+                    }
+
+                    const vulnerabilityMatch = line.match(/^\[\+\]\s+([^\s]+)\s+(.*)$/);
+                    if (vulnerabilityMatch && !line.startsWith('[+] InfoScan') && vulnerabilityMatch[1].toLowerCase() !== 'infoscan') {
+                        const vulType = vulnerabilityMatch[1];
+                        const details = vulnerabilityMatch[2];
+
+                        let hostIp = '';
+                        let portNumberStr = 'unknown';
+
+                        const ipPortDetailMatch = details.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d+))?/);
+                        if (ipPortDetailMatch) {
+                            hostIp = ipPortDetailMatch[1];
+                            portNumberStr = ipPortDetailMatch[2] || portNumberStr;
+                        } else if (currentHostContext) {
+                            hostIp = currentHostContext.ip;
+                        }
+
+                        if (hostIp) {
+                            const host = findOrCreateHost(hostIp);
+                            const port = findOrCreatePort(host, portNumberStr, 'open');
+
+                            const newVulnerability = { type: vulType, details: details };
+                            if (!port.vulnerabilities.some(v => v.type === newVulnerability.type && v.details === newVulnerability.details)) {
+                                port.vulnerabilities.push(newVulnerability);
+                                port.isVulnerability = true;
+                                port.severity = 'vulnerability';
+                                host.hasVulnerability = true;
+                                scanData.vulnerabilities++;
+                            }
+                            currentHostContext = host;
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            function findOrCreateHost(ip) {
+                let host = scanData.hosts.find(h => h.ip === ip);
+                if (!host) {
+                    host = { ip: ip, ports: [], hasVulnerability: false };
+                    scanData.hosts.push(host);
+                }
+                return host;
+            }
+
+            function findOrCreatePort(host, numberStr, status) {
+                let port = host.ports.find(p => p.number === numberStr);
+                if (!port) {
+                    port = {
+                        number: numberStr,
+                        status: status,
+                        webTitles: [],
+                        isVulnerability: false,
+                        severity: 'info',
+                        serviceInfo: [],
+                        vulnerabilities: []
+                    };
+                    host.ports.push(port);
+                    // Sort ports for consistent display
+                    host.ports.sort((a, b) => {
+                        if (a.number === 'unknown') return 1;
+                        if (b.number === 'unknown') return -1;
+                        return parseInt(a.number) - parseInt(b.number);
+                    });
+                }
+                return port;
+            }
+
+            function getIpFromUrl(url) {
+                const match = url.match(/(?:https?:\/\/)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                return match ? match[1] : '';
+            }
+
+            function extractPortFromUrl(url) {
+                const portMatch = url.match(/:(\d+)/);
+                if (portMatch) {
+                    return portMatch[1];
+                }
+                if (url.startsWith('https://')) {
+                    return '443';
+                } else if (url.startsWith('http://')) {
+                    return '80';
+                }
+                return '80'; // Default to 80 if no port specified and not https
+            }
+
+            // --- Host List Rendering (Segmented/Filtered) ---
+            function sortHostsByIP() {
+                scanData.hosts.sort((a, b) => {
+                    const ipA = a.ip.split('.').map(Number);
+                    const ipB = b.ip.split('.').map(Number);
+
+                    for (let i = 0; i < 4; i++) {
+                        if (ipA[i] !== ipB[i]) {
+                            return ipA[i] - ipB[i];
+                        }
+                    }
+                    return 0;
+                });
+            }
+
+            function renderSegmentedHosts() {
+                segmentedHostList.innerHTML = '';
+
+                if (scanData.hosts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = '未解析到有效主机数据或无匹配结果。';
+                    return;
+                }
+
+                emptyState.style.display = 'none';
+
+                const activeTab = document.querySelector('.tab.active').dataset.tab;
+
+                if (activeTab === 'vulnerability') {
+                    renderVulnerabilityHosts();
+                    return;
+                }
+
+                // Group hosts by B and C segments
+                const bSegments = {};
+
+                scanData.hosts.forEach(host => {
+                    const ipParts = host.ip.split('.');
+                    if (ipParts.length < 3) return; // Skip if IP is not valid IPv4 format
+
+                    const bSegment = `${ipParts[0]}.${ipParts[1]}`;
+                    const cSegment = `${bSegment}.${ipParts[2]}`;
+
+                    if (!bSegments[bSegment]) {
+                        bSegments[bSegment] = {
+                            id: bSegment,
+                            cSegments: {}
+                        };
+                    }
+
+                    if (!bSegments[bSegment].cSegments[cSegment]) {
+                        bSegments[bSegment].cSegments[cSegment] = {
+                            id: cSegment,
+                            hosts: []
+                        };
+                    }
+
+                    bSegments[bSegment].cSegments[cSegment].hosts.push(host);
+                });
+
+                // Render B segments
+                Object.keys(bSegments).sort().forEach(bSegmentId => {
+                    const bSegment = bSegments[bSegmentId];
+
+                    const bSegmentElement = document.createElement('div');
+                    bSegmentElement.className = 'segment-item b-segment-item';
+                    bSegmentElement.dataset.segment = bSegmentId;
+
+                    const bSegmentHeader = document.createElement('div');
+                    bSegmentHeader.className = 'segment-header';
+                    bSegmentHeader.innerHTML = `
+                        <span class="segment-toggle"><i class="fa fa-angle-right"></i></span>
+                        <span>B段网络: ${bSegmentId}</span>
+                        <span class="host-count" style="margin-left: 10px; color: #777;">(${Object.keys(bSegment.cSegments).length}个C段)</span>
+                    `;
+
+                    const bSegmentContent = document.createElement('div');
+                    bSegmentContent.className = 'segment-content';
+
+                    // Render C segments within B segments
+                    Object.keys(bSegment.cSegments).sort().forEach(cSegmentId => {
+                        const cSegment = bSegment.cSegments[cSegmentId];
+
+                        const cSegmentElement = document.createElement('div');
+                        cSegmentElement.className = 'segment-item c-segment-item';
+                        cSegmentElement.dataset.segment = cSegmentId;
+
+                        const cSegmentHeader = document.createElement('div');
+                        cSegmentHeader.className = 'segment-header';
+                        cSegmentHeader.innerHTML = `
+                            <span class="segment-toggle"><i class="fa fa-angle-right"></i></span>
+                            <span>C段网络: ${cSegmentId}</span>
+                            <span class="host-count" style="margin-left: 10px; color: #777;">(${cSegment.hosts.length}台主机)</span>
+                        `;
+
+                        const cSegmentContent = document.createElement('div');
+                        cSegmentContent.className = 'segment-content';
+
+                        const hostList = document.createElement('ul');
+                        hostList.className = 'host-list';
+
+                        // Render hosts within C segments
+                        cSegment.hosts.forEach(host => {
+                            addHostToDOM(host, hostList);
+                        });
+
+                        cSegmentContent.appendChild(hostList);
+                        cSegmentElement.appendChild(cSegmentHeader);
+                        cSegmentElement.appendChild(cSegmentContent);
+                        bSegmentContent.appendChild(cSegmentElement);
+                    });
+
+                    bSegmentElement.appendChild(bSegmentHeader);
+                    bSegmentElement.appendChild(bSegmentContent);
+                    segmentedHostList.appendChild(bSegmentElement);
+                });
+
+                // Attach event listeners for expanding/collapsing
+                attachSegmentExpansionListeners();
+                attachHostExpansionListeners();
+            }
+
+            function renderVulnerabilityHosts() {
+                const hostList = document.createElement('ul');
+                hostList.className = 'host-list';
+
+                const vulnerableHosts = scanData.hosts.filter(host => host.hasVulnerability);
+
+                if (vulnerableHosts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = '没有发现漏洞';
+                    return;
+                }
+
+                vulnerableHosts.forEach(host => {
+                    const vulnerablePorts = host.ports.filter(port => port.isVulnerability);
+
+                    if (vulnerablePorts.length > 0) {
+                        // Create a clone of the host object, only including vulnerable ports
+                        const hostWithVulnerabilities = {
+                            ...host,
+                            ports: vulnerablePorts
+                        };
+                        addHostToDOM(hostWithVulnerabilities, hostList);
+                    }
+                });
+                segmentedHostList.appendChild(hostList);
+                attachHostExpansionListeners();
+            }
+
+            function addHostToDOM(host, parentElement) {
+                const hostElement = document.createElement('li');
+                hostElement.className = 'host-item';
+                hostElement.dataset.ip = host.ip;
+
+                const hostHeader = document.createElement('div');
+                hostHeader.className = 'host-header';
+
+                const hostInfo = document.createElement('div');
+                hostInfo.className = 'host-info';
+
+                const hostIpSpan = document.createElement('span');
+                hostIpSpan.textContent = `主机: ${host.ip}`;
+
+                if (host.hasVulnerability) {
+                    hostIpSpan.style.color = '#e74c3c';
+                    hostIpSpan.innerHTML += ` <span class="badge" style="background-color: #e74c3c; color: white; padding: 2px 5px; border-radius: 3px; font-size: 12px; margin-left: 5px;">漏洞</span>`;
+                }
+
+                hostInfo.innerHTML = `<span class="host-toggle"><i class="fa fa-angle-right"></i></span> `;
+                hostInfo.appendChild(hostIpSpan);
+
+                const hostActions = document.createElement('div');
+                hostActions.className = 'host-actions';
+
+                const checkboxLabel = document.createElement('label');
+                checkboxLabel.className = 'host-verify-checkbox';
+                checkboxLabel.style.display = 'flex';
+                checkboxLabel.style.alignItems = 'center';
+                checkboxLabel.style.cursor = 'pointer';
+                checkboxLabel.style.fontWeight = 'normal';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `verify-${host.ip.replace(/\./g, '-')}`;
+                checkbox.dataset.hostIp = host.ip;
+                checkbox.style.marginRight = '5px';
+                checkbox.addEventListener('click', function (e) { e.stopPropagation(); }); // Prevent host expansion on checkbox click
+                checkboxLabel.addEventListener('click', function (e) { e.stopPropagation(); }); // Prevent host expansion on label click
+
+                checkboxLabel.appendChild(checkbox);
+                checkboxLabel.appendChild(document.createTextNode('已检验'));
+
+                hostActions.appendChild(checkboxLabel);
+
+                hostHeader.appendChild(hostInfo);
+                hostHeader.appendChild(hostActions);
+
+                hostElement.appendChild(hostHeader);
+
+                const portListUl = document.createElement('ul');
+                portListUl.className = 'port-list';
+
+                host.ports.forEach(port => {
+                    const portItem = document.createElement('li');
+                    portItem.className = `port-item ${port.severity}`;
+
+                    const portNumberSpan = document.createElement('span');
+                    portNumberSpan.className = 'port-number';
+                    portNumberSpan.textContent = `端口: ${port.number}`;
+
+                    const portActions = document.createElement('div');
+                    portActions.className = 'port-actions';
+
+                    const remarkIcon = document.createElement('span');
+                    remarkIcon.className = 'port-remark-toggle';
+                    remarkIcon.innerHTML = '<i class="fa fa-sticky-note-o"></i>';
+                    remarkIcon.dataset.hostIp = host.ip;
+                    remarkIcon.dataset.port = port.number;
+                    remarkIcon.addEventListener('click', function (e) {
+                        e.stopPropagation(); // Prevent port-item expansion
+                        togglePortRemark(this.dataset.hostIp, this.dataset.port);
+                    });
+
+                    portActions.appendChild(remarkIcon);
+
+                    portItem.appendChild(portNumberSpan);
+                    portItem.appendChild(portActions);
+
+                    const detailsContainer = document.createElement('div');
+                    detailsContainer.className = 'port-details-container';
+
+                    port.webTitles.forEach(webTitle => {
+                        const webTitleElement = document.createElement('div');
+                        webTitleElement.className = 'web-title';
+                        webTitleElement.textContent = `WebTitle: ${webTitle.title} (Code: ${webTitle.code}, URL: ${webTitle.url}${webTitle.jumpUrl ? ', Jump: ' + webTitle.jumpUrl : ''})`;
+                        detailsContainer.appendChild(webTitleElement);
+                    });
+
+                    port.serviceInfo.forEach(serviceInfo => {
+                        const serviceInfoElement = document.createElement('div');
+                        serviceInfoElement.className = 'service-info';
+                        serviceInfoElement.textContent = `服务信息: ${serviceInfo.info} (URL: ${serviceInfo.url})`;
+                        detailsContainer.appendChild(serviceInfoElement);
+                    });
+
+                    port.vulnerabilities.forEach(vulnerability => {
+                        const vulnerabilityElement = document.createElement('div');
+                        vulnerabilityElement.className = 'vulnerability-info';
+                        vulnerabilityElement.textContent = `漏洞: ${vulnerability.type} - ${vulnerability.details}`;
+                        detailsContainer.appendChild(vulnerabilityElement);
+                    });
+
+                    // Add remark editor (initially hidden)
+                    const remarkEditor = document.createElement('div');
+                    remarkEditor.className = 'port-remark-editor';
+                    remarkEditor.style.display = 'none';
+                    remarkEditor.dataset.hostIp = host.ip;
+                    remarkEditor.dataset.port = port.number;
+
+                    const remarkTextarea = document.createElement('textarea');
+                    remarkTextarea.placeholder = '添加备注...';
+
+                    const remarkFileInput = document.createElement('input');
+                    remarkFileInput.type = 'file';
+                    remarkFileInput.accept = '.txt,.pdf,.jpg,.png,.docx'; // Define accepted file types
+
+                    const saveButton = document.createElement('button');
+                    saveButton.className = 'btn btn-primary btn-save-remark';
+                    saveButton.textContent = '保存';
+                    saveButton.addEventListener('click', function () {
+                        savePortRemark(host.ip, port.number, remarkTextarea.value, remarkFileInput.files[0]);
+                        remarkEditor.style.display = 'none'; // Hide editor after saving
+                    });
+
+                    const cancelButton = document.createElement('button');
+                    cancelButton.className = 'btn btn-secondary';
+                    cancelButton.textContent = '取消';
+                    cancelButton.addEventListener('click', function () {
+                        remarkEditor.style.display = 'none'; // Hide editor on cancel
+                    });
+
+                    remarkEditor.appendChild(remarkTextarea);
+                    remarkEditor.appendChild(remarkFileInput);
+                    remarkEditor.appendChild(saveButton);
+                    remarkEditor.appendChild(cancelButton);
+
+                    // Add remark display area
+                    const remarkDisplay = document.createElement('div');
+                    remarkDisplay.className = 'port-remark-display';
+                    remarkDisplay.style.display = 'none'; // Initially hidden
+                    remarkDisplay.dataset.hostIp = host.ip;
+                    remarkDisplay.dataset.port = port.number;
+
+                    portItem.appendChild(detailsContainer);
+                    portItem.appendChild(remarkEditor);
+                    portItem.appendChild(remarkDisplay);
+
+                    // Check for existing notes and update display
+                    // THIS IS CRUCIAL FOR REMARK DISPLAY AFTER RELOAD OR RE-RENDER
+                    const noteKey = `${host.ip}:${port.number}`;
+                    if (portNotes[noteKey]) {
+                        updateRemarkDisplay(host.ip, port.number);
+                    }
+
+                    portListUl.appendChild(portItem);
+                });
+
+                hostElement.appendChild(portListUl);
+                parentElement.appendChild(hostElement);
+            }
+
+            function attachSegmentExpansionListeners() {
+                document.querySelectorAll('.segment-header').forEach(header => {
+                    header.removeEventListener('click', toggleSegmentExpansion); // Remove old listener to prevent duplicates
+                    header.addEventListener('click', toggleSegmentExpansion);
+                });
+            }
+
+            function toggleSegmentExpansion() {
+                const segmentItem = this.closest('.segment-item');
+                if (segmentItem) {
+                    segmentItem.classList.toggle('expanded');
+                }
+            }
+
+            function attachHostExpansionListeners() {
+                document.querySelectorAll('.host-info').forEach(headerInfo => {
+                    headerInfo.removeEventListener('click', toggleHostExpansionHandler); // Remove old listener
+                    headerInfo.addEventListener('click', toggleHostExpansionHandler);
+                });
+            }
+
+            function toggleHostExpansionHandler(event) {
+                // Prevent toggling if click is on checkbox or its label
+                if (event.target.type === 'checkbox' || event.target.closest('.host-verify-checkbox')) {
+                    return;
+                }
+                const hostItem = this.closest('.host-item');
+                if (hostItem) {
+                    hostItem.classList.toggle('expanded');
+                }
+            }
+
+            // --- Port Remark Functionality ---
+            function togglePortRemark(hostIp, port) {
+                console.log(`Attempting to toggle remark for ${hostIp}:${port}`);
+                const noteKey = `${hostIp}:${port}`;
+                const remarkEditor = document.querySelector(`.port-remark-editor[data-host-ip="${hostIp}"][data-port="${port}"]`);
+                const remarkDisplay = document.querySelector(`.port-remark-display[data-host-ip="${hostIp}"][data-port="${port}"]`);
+
+                if (!remarkEditor) {
+                    console.error(`Remark editor not found for ${noteKey}`);
+                    return;
+                }
+                if (!remarkDisplay) {
+                    console.error(`Remark display not found for ${noteKey}`);
+                    return;
+                }
+
+                console.log('remarkEditor display:', remarkEditor.style.display);
+                console.log('remarkDisplay display:', remarkDisplay.style.display);
+                console.log('Current note for key:', portNotes[noteKey]);
+
+                // If remark editor is currently visible, hide it.
+                if (remarkEditor.style.display === 'block') {
+                    remarkEditor.style.display = 'none';
+                    // If there's an existing note, show its display when closing editor
+                    if (portNotes[noteKey] && (portNotes[noteKey].text || portNotes[noteKey].file)) {
+                        remarkDisplay.style.display = 'block';
+                    }
+                    return;
+                }
+
+                // If remark display is visible, hide it and show editor if a note exists, otherwise just hide.
+                if (remarkDisplay.style.display === 'block') {
+                    remarkDisplay.style.display = 'none';
+                    if (portNotes[noteKey] && (portNotes[noteKey].text || portNotes[noteKey].file)) {
+                        remarkEditor.style.display = 'block';
+                        // Populate textarea with existing text
+                        remarkEditor.querySelector('textarea').value = portNotes[noteKey].text || '';
+                        // Clear file input to avoid re-uploading on save if user doesn't pick new file
+                        remarkEditor.querySelector('input[type="file"]').value = '';
+                    }
+                    return;
+                }
+
+                // Default: neither is visible, show editor.
+                remarkEditor.style.display = 'block';
+                // Populate textarea if there's an existing note (even if empty)
+                if (portNotes[noteKey] && remarkEditor.querySelector('textarea')) {
+                    remarkEditor.querySelector('textarea').value = portNotes[noteKey].text || '';
+                }
+                // Clear file input to avoid re-uploading on save if user doesn't pick new file
+                remarkEditor.querySelector('input[type="file"]').value = '';
+            }
+
+            function savePortRemark(hostIp, port, remarkText, file) {
+                console.log(`Saving remark for ${hostIp}:${port} with text: "${remarkText}" and file: ${file ? file.name : 'none'}`);
+                const noteKey = `${hostIp}:${port}`;
+
+                let fileUrl = null;
+                let fileName = null;
+
+                if (file) {
+                    // Revoke previous URL if exists to prevent memory leaks
+                    if (portNotes[noteKey] && portNotes[noteKey].file) {
+                        URL.revokeObjectURL(portNotes[noteKey].file);
+                    }
+                    fileUrl = URL.createObjectURL(file);
+                    fileName = file.name;
+                } else if (portNotes[noteKey] && portNotes[noteKey].file && remarkText !== null) { // Check for explicit text presence
+                    // If no new file, but existing file and new text, retain old file
+                    fileUrl = portNotes[noteKey].file;
+                    fileName = portNotes[noteKey].fileName;
+                } else if (portNotes[noteKey] && portNotes[noteKey].file && !remarkText) {
+                    // If no new file, and no new text, and existing file, delete file
+                    URL.revokeObjectURL(portNotes[noteKey].file);
+                    fileUrl = null;
+                    fileName = null;
+                }
+
+                // If both text and file are empty, delete the note
+                if (!remarkText && !fileUrl) {
+                    delete portNotes[noteKey];
+                    console.log(`Deleted note for ${noteKey}`);
+                } else {
+                    portNotes[noteKey] = {
+                        text: remarkText,
+                        file: fileUrl,
+                        fileName: fileName,
+                        timestamp: new Date().toISOString()
+                    };
+                    console.log(`Saved note for ${noteKey}:`, portNotes[noteKey]);
+                }
+
+                updateRemarkDisplay(hostIp, port);
+                localStorage.setItem('fscan_port_notes', JSON.stringify(portNotes));
+            }
+
+            function updateRemarkDisplay(hostIp, port) {
+                console.log(`Updating remark display for ${hostIp}:${port}`);
+                const noteKey = `${hostIp}:${port}`;
+                const note = portNotes[noteKey];
+
+                const remarkDisplay = document.querySelector(`.port-remark-display[data-host-ip="${hostIp}"][data-port="${port}"]`);
+                if (!remarkDisplay) {
+                    console.error(`Remark display element not found for ${noteKey} during update.`);
+                    return;
+                }
+
+                remarkDisplay.innerHTML = ''; // Clear previous content
+
+                if (!note || (!note.text && !note.file)) { // Check if note exists and has content
+                    remarkDisplay.style.display = 'none';
+                    return;
+                }
+
+                if (note.text) {
+                    const textElement = document.createElement('p');
+                    textElement.innerHTML = `<strong>备注:</strong> ${note.text}`;
+                    remarkDisplay.appendChild(textElement);
+                }
+
+                if (note.file) {
+                    const fileElement = document.createElement('p');
+                    const fileLink = document.createElement('a');
+                    fileLink.href = note.file;
+                    fileLink.textContent = note.fileName;
+                    fileLink.target = '_blank';
+                    fileElement.innerHTML = '<strong>附件:</strong> ';
+                    fileElement.appendChild(fileLink);
+                    remarkDisplay.appendChild(fileElement);
+                }
+
+                const timeElement = document.createElement('p');
+                timeElement.innerHTML = `<strong>时间:</strong> ${new Date(note.timestamp).toLocaleString()}`;
+                remarkDisplay.appendChild(timeElement);
+
+                remarkDisplay.style.display = 'block'; // Always show if there's content
+            }
+
+            function loadSavedNotes() {
+                const savedNotes = localStorage.getItem('fscan_port_notes');
+                if (savedNotes) {
+                    portNotes = JSON.parse(savedNotes);
+                    console.log('Loaded saved notes:', portNotes);
+                    // Note: Blob URLs are temporary and tied to the session.
+                    // If you want persistent file storage, you'd need server-side saving or more complex client-side techniques.
+                    // For now, if the page is reloaded, Blob URLs created from previous session are invalid.
+                    // This means files linked via Blob URLs will not be accessible after a full page refresh.
+                    // To truly persist files, you'd need to store the file content (e.g., Base64 encode it) in localStorage,
+                    // which has size limitations (typically 5-10 MB), or use IndexedDB for larger data.
+                }
+            }
+
+            // --- Expand/Collapse All ---
+            expandAllBtn.addEventListener('click', () => {
+                document.querySelectorAll('.segment-item, .host-item').forEach(item => item.classList.add('expanded'));
+            });
+
+            collapseAllBtn.addEventListener('click', () => {
+                document.querySelectorAll('.segment-item, .host-item').forEach(item => item.classList.remove('expanded'));
+            });
+
+            // --- Filtering Logic ---
+            function filterResults() {
+                const searchTerm = searchInput.value.toLowerCase();
+                const selectedSeverity = severityFilter.value;
+                const activeTab = document.querySelector('.tab.active').dataset.tab;
+
+                if (scanData.hosts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = '请导入 fscan 扫描结果文件';
+                    segmentedHostList.innerHTML = '';
+                    return;
+                }
+
+                // Create a deep copy to manipulate displayPorts without affecting original data
+                const hostsForFiltering = JSON.parse(JSON.stringify(scanData.hosts));
+
+                const filteredHosts = hostsForFiltering.filter(host => {
+                    const hostMatchesSearch = host.ip.toLowerCase().includes(searchTerm);
+                    let hostHasMatchingPort = false;
+
+                    const filteredPorts = host.ports.filter(port => {
+                        const portMatchesSearch = port.number.toLowerCase().includes(searchTerm) ||
+                            port.webTitles.some(wt => wt.title.toLowerCase().includes(searchTerm) || wt.url.toLowerCase().includes(searchTerm)) ||
+                            port.serviceInfo.some(si => si.info.toLowerCase().includes(searchTerm) || si.url.toLowerCase().includes(searchTerm)) ||
+                            port.vulnerabilities.some(v => v.type.toLowerCase().includes(searchTerm) || v.details.toLowerCase().includes(searchTerm));
+
+                        const portMatchesSeverity = (selectedSeverity === 'all') || (port.severity === selectedSeverity);
+
+                        const portMatchesTab = (activeTab === 'all') || (port.severity === activeTab);
+
+                        return (hostMatchesSearch || portMatchesSearch) && portMatchesSeverity && portMatchesTab;
+                    });
+
+                    if (filteredPorts.length > 0) {
+                        hostHasMatchingPort = true;
+                        host.displayPorts = filteredPorts; // Store filtered ports for display
+                    } else {
+                        host.displayPorts = [];
+                    }
+                    return hostHasMatchingPort || hostMatchesSearch; // Host passes if it or any of its ports match
+                });
+
+                renderFilteredSegmentedHosts(filteredHosts);
+            }
+
+            function renderFilteredSegmentedHosts(filteredHosts) {
+                segmentedHostList.innerHTML = '';
+
+                if (filteredHosts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = '没有找到匹配的结果。';
+                    return;
+                }
+
+                emptyState.style.display = 'none';
+
+                const activeTab = document.querySelector('.tab.active').dataset.tab;
+
+                if (activeTab === 'vulnerability') {
+                    renderVulnerabilityHostsFiltered(filteredHosts);
+                    return;
+                }
+
+                const bSegments = {};
+                filteredHosts.forEach(host => {
+                    const ipParts = host.ip.split('.');
+                    if (ipParts.length < 3) return;
+
+                    const bSegment = `${ipParts[0]}.${ipParts[1]}`;
+                    const cSegment = `${bSegment}.${ipParts[2]}`;
+
+                    if (!bSegments[bSegment]) bSegments[bSegment] = { id: bSegment, cSegments: {} };
+                    if (!bSegments[bSegment].cSegments[cSegment]) bSegments[bSegment].cSegments[cSegment] = { id: cSegment, hosts: [] };
+                    bSegments[bSegment].cSegments[cSegment].hosts.push(host);
+                });
+
+                Object.keys(bSegments).sort().forEach(bSegmentId => {
+                    const bSegment = bSegments[bSegmentId];
+                    const bSegmentElement = document.createElement('div');
+                    bSegmentElement.className = 'segment-item b-segment-item';
+                    bSegmentElement.dataset.segment = bSegmentId;
+
+                    const bSegmentHeader = document.createElement('div');
+                    bSegmentHeader.className = 'segment-header';
+                    bSegmentHeader.innerHTML = `
+                        <span class="segment-toggle"><i class="fa fa-angle-right"></i></span>
+                        <span>B段网络: ${bSegmentId}</span>
+                        <span class="host-count" style="margin-left: 10px; color: #777;">(${Object.keys(bSegment.cSegments).length}个C段)</span>
+                    `;
+                    const bSegmentContent = document.createElement('div');
+                    bSegmentContent.className = 'segment-content';
+
+                    Object.keys(bSegment.cSegments).sort().forEach(cSegmentId => {
+                        const cSegment = bSegment.cSegments[cSegmentId];
+                        const cSegmentElement = document.createElement('div');
+                        cSegmentElement.className = 'segment-item c-segment-item';
+                        cSegmentElement.dataset.segment = cSegmentId;
+
+                        const cSegmentHeader = document.createElement('div');
+                        cSegmentHeader.className = 'segment-header';
+                        cSegmentHeader.innerHTML = `
+                            <span class="segment-toggle"><i class="fa fa-angle-right"></i></span>
+                            <span>C段网络: ${cSegmentId}</span>
+                            <span class="host-count" style="margin-left: 10px; color: #777;">(${cSegment.hosts.length}台主机)</span>
+                        `;
+                        const cSegmentContent = document.createElement('div');
+                        cSegmentContent.className = 'segment-content';
+                        const hostList = document.createElement('ul');
+                        hostList.className = 'host-list';
+
+                        cSegment.hosts.forEach(host => {
+                            addHostToDOMFiltered(host, hostList);
+                        });
+
+                        cSegmentContent.appendChild(hostList);
+                        cSegmentElement.appendChild(cSegmentHeader);
+                        cSegmentElement.appendChild(cSegmentContent);
+                        bSegmentContent.appendChild(cSegmentElement);
+                    });
+                    bSegmentElement.appendChild(bSegmentHeader);
+                    bSegmentElement.appendChild(bSegmentContent);
+                    segmentedHostList.appendChild(bSegmentElement);
+                });
+                attachSegmentExpansionListeners();
+                attachHostExpansionListeners();
+            }
+
+            function renderVulnerabilityHostsFiltered(filteredHosts) {
+                const hostList = document.createElement('ul');
+                hostList.className = 'host-list';
+
+                const vulnerableFilteredHosts = filteredHosts.filter(host => host.hasVulnerability);
+
+                if (vulnerableFilteredHosts.length === 0) {
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = '没有找到匹配的漏洞。';
+                    return;
+                }
+
+                vulnerableFilteredHosts.forEach(host => {
+                    const hostWithVulnerabilities = {
+                        ...host,
+                        ports: host.displayPorts.filter(port => port.isVulnerability)
+                    };
+                    if (hostWithVulnerabilities.ports.length > 0) {
+                        addHostToDOMFiltered(hostWithVulnerabilities, hostList);
+                    }
+                });
+                segmentedHostList.appendChild(hostList);
+                attachHostExpansionListeners();
+            }
+
+            function addHostToDOMFiltered(host, parentElement) {
+                const hostElement = document.createElement('li');
+                hostElement.className = 'host-item';
+                hostElement.dataset.ip = host.ip;
+
+                const hostHeader = document.createElement('div');
+                hostHeader.className = 'host-header';
+
+                const hostInfo = document.createElement('div');
+                hostInfo.className = 'host-info';
+
+                const hostIpSpan = document.createElement('span');
+                hostIpSpan.textContent = `主机: ${host.ip}`;
+
+                if (host.hasVulnerability) {
+                    hostIpSpan.style.color = '#e74c3c';
+                    hostIpSpan.innerHTML += ` <span class="badge" style="background-color: #e74c3c; color: white; padding: 2px 5px; border-radius: 3px; font-size: 12px; margin-left: 5px;">漏洞</span>`;
+                }
+
+                hostInfo.innerHTML = `<span class="host-toggle"><i class="fa fa-angle-right"></i></span> `;
+                hostInfo.appendChild(hostIpSpan);
+
+                const hostActions = document.createElement('div');
+                hostActions.className = 'host-actions';
+
+                const checkboxLabel = document.createElement('label');
+                checkboxLabel.className = 'host-verify-checkbox';
+                checkboxLabel.style.display = 'flex';
+                checkboxLabel.style.alignItems = 'center';
+                checkboxLabel.style.cursor = 'pointer';
+                checkboxLabel.style.fontWeight = 'normal';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `verify-${host.ip.replace(/\./g, '-')}`;
+                checkbox.dataset.hostIp = host.ip;
+                checkbox.style.marginRight = '5px';
+                checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+                checkboxLabel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+                checkboxLabel.appendChild(checkbox);
+                checkboxLabel.appendChild(document.createTextNode('已检验'));
+
+                hostActions.appendChild(checkboxLabel);
+
+                hostHeader.appendChild(hostInfo);
+                hostHeader.appendChild(hostActions);
+
+                hostElement.appendChild(hostHeader);
+
+                const portListUl = document.createElement('ul');
+                portListUl.className = 'port-list';
+
+                (host.displayPorts || host.ports).forEach(port => {
+                    const portItem = document.createElement('li');
+                    portItem.className = `port-item ${port.severity}`;
+
+                    const portNumberSpan = document.createElement('span');
+                    portNumberSpan.className = 'port-number';
+                    portNumberSpan.textContent = `端口: ${port.number}`;
+
+                    const portActions = document.createElement('div');
+                    portActions.className = 'port-actions';
+
+                    const remarkIcon = document.createElement('span');
+                    remarkIcon.className = 'port-remark-toggle';
+                    remarkIcon.innerHTML = '<i class="fa fa-sticky-note-o"></i>';
+                    remarkIcon.dataset.hostIp = host.ip;
+                    remarkIcon.dataset.port = port.number;
+                    remarkIcon.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        togglePortRemark(this.dataset.hostIp, this.dataset.port);
+                    });
+
+                    portActions.appendChild(remarkIcon);
+
+                    portItem.appendChild(portNumberSpan);
+                    portItem.appendChild(portActions);
+
+                    const detailsContainer = document.createElement('div');
+                    detailsContainer.className = 'port-details-container';
+
+                    port.webTitles.forEach(webTitle => {
+                        const webTitleElement = document.createElement('div');
+                        webTitleElement.className = 'web-title';
+                        webTitleElement.textContent = `WebTitle: ${webTitle.title} (Code: ${webTitle.code}, URL: ${webTitle.url}${webTitle.jumpUrl ? ', Jump: ' + webTitle.jumpUrl : ''})`;
+                        detailsContainer.appendChild(webTitleElement);
+                    });
+
+                    port.serviceInfo.forEach(serviceInfo => {
+                        const serviceInfoElement = document.createElement('div');
+                        serviceInfoElement.className = 'service-info';
+                        serviceInfoElement.textContent = `服务信息: ${serviceInfo.info} (URL: ${serviceInfo.url})`;
+                        detailsContainer.appendChild(serviceInfoElement);
+                    });
+
+                    port.vulnerabilities.forEach(vulnerability => {
+                        const vulnerabilityElement = document.createElement('div');
+                        vulnerabilityElement.className = 'vulnerability-info';
+                        vulnerabilityElement.textContent = `漏洞: ${vulnerability.type} - ${vulnerability.details}`;
+                        detailsContainer.appendChild(vulnerabilityElement);
+                    });
+
+                    const remarkEditor = document.createElement('div');
+                    remarkEditor.className = 'port-remark-editor';
+                    remarkEditor.style.display = 'none';
+                    remarkEditor.dataset.hostIp = host.ip;
+                    remarkEditor.dataset.port = port.number;
+
+                    const remarkTextarea = document.createElement('textarea');
+                    remarkTextarea.placeholder = '添加备注...';
+
+                    const remarkFileInput = document.createElement('input');
+                    remarkFileInput.type = 'file';
+                    remarkFileInput.accept = '.txt,.pdf,.jpg,.png,.docx';
+
+                    const saveButton = document.createElement('button');
+                    saveButton.className = 'btn btn-primary btn-save-remark';
+                    saveButton.textContent = '保存';
+                    saveButton.addEventListener('click', function () {
+                        savePortRemark(host.ip, port.number, remarkTextarea.value, remarkFileInput.files[0]);
+                        remarkEditor.style.display = 'none';
+                    });
+
+                    const cancelButton = document.createElement('button');
+                    cancelButton.className = 'btn btn-secondary';
+                    cancelButton.textContent = '取消';
+                    cancelButton.addEventListener('click', function () {
+                        remarkEditor.style.display = 'none';
+                    });
+
+                    remarkEditor.appendChild(remarkTextarea);
+                    remarkEditor.appendChild(remarkFileInput);
+                    remarkEditor.appendChild(saveButton);
+                    remarkEditor.appendChild(cancelButton);
+
+                    const remarkDisplay = document.createElement('div');
+                    remarkDisplay.className = 'port-remark-display';
+                    remarkDisplay.style.display = 'none';
+                    remarkDisplay.dataset.hostIp = host.ip;
+                    remarkDisplay.dataset.port = port.number;
+
+                    portItem.appendChild(detailsContainer);
+                    portItem.appendChild(remarkEditor);
+                    portItem.appendChild(remarkDisplay);
+
+                    const noteKey = `${host.ip}:${port.number}`;
+                    if (portNotes[noteKey]) {
+                        updateRemarkDisplay(host.ip, port.number);
+                    }
+
+                    portListUl.appendChild(portItem);
+                });
+
+                hostElement.appendChild(portListUl);
+                parentElement.appendChild(hostElement);
+            }
+
+            // --- Filter Event Listeners ---
+            function addFilterEvents() {
+                searchInput.addEventListener('input', filterResults);
+                severityFilter.addEventListener('change', filterResults);
+                clearFilterBtn.addEventListener('click', () => {
+                    searchInput.value = '';
+                    severityFilter.value = 'all';
+                    document.querySelector('.tab[data-tab="all"]').click();
+                    filterResults();
+                });
+            }
+
+
+            // --- Network Graph Visualization (D3.js) ---
+            function buildNetworkGraph() {
+                const svgContainer = d3.select("#network-graph");
+                svgContainer.selectAll("*").remove(); // Clear previous graph elements
+
+                // Ensure the SVG container has actual dimensions
+                const width = svgContainer.node().getBoundingClientRect().width;
+                const height = svgContainer.node().getBoundingClientRect().height;
+
+                if (width <= 0 || height <= 0) {
+                    console.warn("Network graph container has zero or negative dimensions. Cannot render graph.");
+                    return;
+                }
+
+                const svg = svgContainer.append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                // Create a group for all graph elements that will be zoomed/panned
+                const g = svg.append("g");
+
+                // Define zoom behavior
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 10]) // Min and max zoom level
+                    .on("zoom", (event) => {
+                        g.attr("transform", event.transform);
+                    });
+
+                svg.call(zoom); // Apply zoom behavior to the SVG
+
+                const simulation = d3.forceSimulation()
+                    .force("link", d3.forceLink().id(d => d.id).distance(50).strength(0.7)) // Increased strength for more rigid links
+                    .force("charge", d3.forceManyBody().strength(-500)) // Stronger repulsion between nodes
+                    .force("center", d3.forceCenter(width / 2, height / 2))
+                    .force("x", d3.forceX(width / 2).strength(0.05)) // Keep nodes centered horizontally
+                    .force("y", d3.forceY(height / 2).strength(0.05)); // Keep nodes centered vertically
+
+                const nodes = [];
+                const links = [];
+                const nodeMap = new Map(); // To easily find nodes by ID
+
+                // Helper to get or create a node
+                function getOrCreateNode(id, type, label, additionalProps = {}) {
+                    if (!nodeMap.has(id)) {
+                        const newNode = { id, type, label, ...additionalProps };
+                        nodes.push(newNode);
+                        nodeMap.set(id, newNode);
+                    }
+                    return nodeMap.get(id);
+                }
+
+                const bSegmentsMap = new Map(); // Map to store b-segment nodes by their ID
+                const cSegmentsMap = new Map(); // Map to store c-segment nodes by their ID
+
+                // Populate nodes and links based on hierarchy
+                scanData.hosts.forEach(host => {
+                    const ipParts = host.ip.split('.');
+                    if (ipParts.length < 4) return; // Ensure valid IPv4
+
+                    const bSegmentId = `b-${ipParts[0]}.${ipParts[1]}`;
+                    const cSegmentId = `c-${ipParts[0]}.${ipParts[1]}.${ipParts[2]}`;
+                    const hostId = `host-${host.ip}`;
+
+                    // Create B-segment node
+                    const bSegmentNode = getOrCreateNode(bSegmentId, 'b-segment', bSegmentId);
+                    bSegmentsMap.set(bSegmentId, bSegmentNode);
+
+                    // Create C-segment node
+                    const cSegmentNode = getOrCreateNode(cSegmentId, 'c-segment', cSegmentId);
+                    cSegmentsMap.set(cSegmentId, cSegmentNode);
+
+                    // Link B-segment to C-segment
+                    const bToCLink = { source: bSegmentId, target: cSegmentId, type: 'b-c' };
+                    if (!links.some(l => l.source === bToCLink.source && l.target === bToCLink.target)) {
+                        links.push(bToCLink);
+                    }
+
+                    // Create Host node
+                    const hostNode = getOrCreateNode(hostId, 'host', host.ip, { isVulnerable: host.hasVulnerability });
+
+                    // Link C-segment to Host
+                    const cToHostLink = { source: cSegmentId, target: hostId, type: 'c-host' };
+                    if (!links.some(l => l.source === cToHostLink.source && l.target === cToHostLink.target)) {
+                        links.push(cToHostLink);
+                    }
+
+
+                    host.ports.forEach(port => {
+                        const portId = `port-${host.ip}-${port.number}`;
+                        const portNode = getOrCreateNode(portId, 'port', port.number, { parentHost: host.ip, isVulnerable: port.isVulnerability });
+
+                        // Link Host to Port
+                        links.push({ source: hostNode.id, target: portId, type: 'host-port' });
+
+                        // Add nodes for web titles, services, and vulnerabilities
+                        port.webTitles.forEach(wt => {
+                            const webNodeId = `web-${host.ip}-${port.number}-${wt.title.replace(/[^\w-]/g, '').substring(0, 50)}`;
+                            const webNode = getOrCreateNode(webNodeId, 'web', `Web: ${wt.title.substring(0, 20)}...`, { parentPort: portId });
+                            links.push({ source: portNode.id, target: webNode.id, type: 'port-detail' });
+                        });
+                        port.serviceInfo.forEach(si => {
+                            const serviceNodeId = `service-${host.ip}-${port.number}-${si.info.replace(/[^\w-]/g, '').substring(0, 50)}`;
+                            const serviceNode = getOrCreateNode(serviceNodeId, 'service', `Service: ${si.info.substring(0, 20)}...`, { parentPort: portId });
+                            links.push({ source: portNode.id, target: serviceNode.id, type: 'port-detail' });
+                        });
+                        port.vulnerabilities.forEach(vul => {
+                            const vulNodeId = `vul-${host.ip}-${port.number}-${vul.type.replace(/[^\w-]/g, '').substring(0, 50)}`;
+                            const vulNode = getOrCreateNode(vulNodeId, 'vulnerability', `Vul: ${vul.type}`, { parentPort: portId, isVulnerable: true });
+                            links.push({ source: portNode.id, target: vulNode.id, type: 'port-detail' });
+                        });
+                    });
+                });
+
+                // Draw links
+                const link = g.append("g")
+                    .attr("class", "links")
+                    .selectAll("line")
+                    .data(links)
+                    .enter().append("line")
+                    .attr("class", d => `link ${d.type}`); // Apply specific class for link type
+
+                // Draw nodes (circles and text labels grouped)
+                const nodeGroup = g.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("g")
+                    .data(nodes)
+                    .enter().append("g")
+                    .attr("class", d => `node ${d.type} ${d.isVulnerable ? 'vulnerable' : ''}`)
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended));
+
+                nodeGroup.append("circle")
+                    .attr("r", d => {
+                        if (d.type === 'b-segment') return 30;
+                        if (d.type === 'c-segment') return 20;
+                        if (d.type === 'host') return 15;
+                        if (d.type === 'port') return 10;
+                        return 5; // For web, service, vulnerability
+                    });
+
+                nodeGroup.append("text")
+                    .attr("dy", d => {
+                        if (d.type === 'b-segment') return -35; // Text above large circle
+                        if (d.type === 'c-segment') return -25;
+                        return -15; // Default above smaller circles
+                    })
+                    .attr("text-anchor", "middle")
+                    .text(d => d.label);
+
+                // Initialize and run the simulation
+                simulation.nodes(nodes).on("tick", ticked);
+                simulation.force("link").links(links);
+
+                // Tooltip for node details on hover
+                const tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+
+                nodeGroup.on("mouseover", function (event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    let tooltipContent = `<strong>类型:</strong> ${d.type}<br/><strong>标签:</strong> ${d.label}`;
+
+                    if (d.type === 'host') {
+                        const host = scanData.hosts.find(h => h.ip === d.label);
+                        if (host) {
+                            tooltipContent += `<br/>端口数量: ${host.ports.length}`;
+                            if (host.hasVulnerability) tooltipContent += `<br/><span style="color:red;">存在漏洞</span>`;
+                        }
+                    } else if (d.type === 'port') {
+                        const host = scanData.hosts.find(h => h.ip === d.parentHost);
+                        if (host) {
+                            const port = host.ports.find(p => p.number == d.label); // Use == for number comparison
+                            if (port) {
+                                if (port.webTitles.length > 0) tooltipContent += `<br/>Web标题: ${port.webTitles.map(wt => wt.title).join(', ')}`;
+                                if (port.serviceInfo.length > 0) tooltipContent += `<br/>服务信息: ${port.serviceInfo.map(si => si.info).join(', ')}`;
+                                if (port.vulnerabilities.length > 0) tooltipContent += `<br/><span style="color:red;">漏洞: ${port.vulnerabilities.map(v => v.type).join(', ')}</span>`;
+                            }
+                        }
+                    } else if (d.type === 'vulnerability') {
+                        // Find the original vulnerability details
+                        const parts = d.id.split('-');
+                        const hostIp = parts[1];
+                        const portNumber = parts[2];
+                        const vulTypeLabel = parts[3]; // The sanitized type from the ID
+
+                        const host = scanData.hosts.find(h => h.ip === hostIp);
+                        if (host) {
+                            const port = host.ports.find(p => p.number == portNumber);
+                            if (port) {
+                                const vul = port.vulnerabilities.find(v => v.type.replace(/[^\w-]/g, '').substring(0, 50) === vulTypeLabel);
+                                if (vul) tooltipContent += `<br/>详细信息: ${vul.details}`;
+                            }
+                        }
+                    }
+                    tooltip.html(tooltipContent)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                    .on("mouseout", function (d) {
+                        tooltip.transition()
+                            .duration(500)
+                            .style("opacity", 0);
+                    });
+
+                // Tick function to update node and link positions
+                function ticked() {
+                    link
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+
+                    nodeGroup
+                        .attr("transform", d => `translate(${d.x},${d.y})`);
+                }
+
+                // Drag functions for nodes
+                function dragstarted(event, d) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x;
+                    d.fy = d.y;
+                    d3.select(this).classed('active', true); // Add active class on drag start
+                }
+
+                function dragged(event, d) {
+                    d.fx = event.x;
+                    d.fy = event.y;
+                }
+
+                function dragended(event, d) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null;
+                    d.fy = null;
+                    d3.select(this).classed('active', false); // Remove active class on drag end
+                }
+            }
+
+            // Load saved notes when the page loads
+            loadSavedNotes();
+        });
+    </script>
+</body>
+
+</html>
